@@ -1,4 +1,3 @@
-import pdb
 from z3 import *
 
 sent_letters = 'PQRSTUVWXYZ'
