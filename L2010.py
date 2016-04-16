@@ -1,3 +1,4 @@
+import pdb
 from z3 import *
 
 sent_letters = 'PQRSTUVWXYZ'
@@ -7,36 +8,6 @@ mono_preds = 'ABCDEFGHIJKLMNO'
 poly_preds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 connectives = '∧∨→↔'
 quantifiers = '∀∃'
-
-def rm_spaces(s):
-  return s.replace(' ','')
-
-def rm_neq(s) :
-  if not ('≠' in s) :
-    return s
-  elif breaks(s, [is_any, is_term, is_neq, is_any]) :
-    t = breaks(s, [is_any, is_term, is_neq, is_any]) 
-    return rm_neq(t[0] + '~' + t[1] + '=' + t[3])
-  else:
-    return s
-
-def is_any(s):
-  return True
-
-def is_eq(s):
-  return s == '='
-
-def is_neq(s):
-  return s == '≠'
-
-def is_neg(s):
-  return s == '∼'
-
-def is_lp(s):
-  return s == '('
-
-def is_rp(s):
-  return s == ')'
 
 def is_letter_in(s,list):
   return len(s) == 1 and s in list
@@ -50,11 +21,8 @@ def is_func(s):
 def is_var(s): 
   return is_letter_in(s,variables)
 
-def is_mono_pred(s): 
-  return is_letter_in(s,mono_preds)
-
-def is_poly_pred(s):
-  return is_letter_in(s,poly_preds)
+def is_neg(s):
+  return s == '∼'
 
 def is_connective(s):
   return is_letter_in(s,connectives)
@@ -62,98 +30,55 @@ def is_connective(s):
 def is_quantifier(s):
   return is_letter_in(s,quantifiers)
 
-def breaks(s,cl):
-  if not cl:
-    return []
-  for i in range(0,len(s)+1):
-    if cl[0](s[:i]):
-      if breaks(s[i:],cl[1:]) or not (s[i:] or cl[1:]):
-        return [s[:i]] + breaks(s[i:],cl[1:])
-  return []
-
-def is_term(s):
-  return is_var(s) or is_func(s) or is_ap_func(s)
-
-def is_ap_func(s):
-  return breaks(s, [is_func, is_lp, is_term_concat, is_rp]) 
-
-def is_term_concat(s) :
-  if is_term(s) :
-    return [s]
-  elif breaks(s, [is_term, is_term_concat]) :
-    p = breaks(s, [is_term, is_term_concat])
-    return [p[0]] + is_term_concat(p[1])
-  else :
-    return []
-
-def is_negation(s): 
-  return breaks(s, [is_neg, is_formula]) 
-
-def is_ap_mono_pred(s) :
-  return breaks(s, [is_mono_pred, is_term]) 
-
-def is_ap_poly_pred(s) :
-  return breaks(s, [is_poly_pred, is_lp, is_term_concat, is_rp]) 
-
-def is_formula(s): 
-  return is_atom(s) or is_molecule(s)
-
-def is_atom(s): 
-  return is_sent_letter(s) or is_id(s) or is_ap_mono_pred(s) or is_ap_poly_pred(s) 
-
-def is_id(s) : 
-  return breaks(s, [is_term, is_eq, is_term]) 
-
-def is_molecule(s): 
-  return is_negation(s) or is_binary(s) or is_quantified(s)
-
-def is_binary(s): 
-  return breaks(s, [is_lp, is_formula, is_connective, is_formula, is_rp]) 
-
-def is_quantified(s): 
-  return breaks(s, [is_quantifier, is_var, is_formula]) 
- 
 def conv_formula(s0) :
   s = rm_spaces(s0)
-  if is_atom(s) :
-    return conv_atom(s)
-  elif is_molecule(s) :
+  if mc_at(s) == len(s) :
+    return conv_atom(s) 
+  else :
     return conv_molecule(s)
-  else:
-    return 'Error : not a wff'
+
+def rm_spaces(s) :
+  return s.replace(' ','')
+
+def mc_at(s) : # Returns the position of main connective. If atomic, returns len(s)
+  if is_neg(s[0]) or is_quantifier(s[0]) :
+    return 0
+  for i in range(2,len(s)-2) :
+    if is_connective(s[i]) and is_balanced(s[1:i]) :
+      return i
+  return len(s)
+
+def is_balanced(s) :
+  return s.count('(') == s.count(')')  
 
 def conv_atom(s):
   if is_sent_letter(s):
     return s
-  elif is_id(s):
+  elif '=' in s:
     return conv_id(s)
-  elif is_ap_mono_pred(s):
-    return conv_ap_mono_pred(s)
-  elif is_ap_poly_pred(s):
-    return conv_ap_poly_pred(s)
+  elif '≠' in s:
+    return conv_nid(s)
   else :
-    return 'Error : not an atomic formula'
+    return conv_ap(paren_args(s))
 
 def conv_molecule(s) :
-  if is_negation(s) :
+  c = s[mc_at(s)] 
+  if is_neg(c) :
     return conv_negation(s)
-  elif is_binary(s) : 
+  elif is_connective(c) :
     return conv_binary(s)
-  elif is_quantified(s) :
+  else : 
     return conv_quantified(s)
-  else :
-    return 'Error : not a molecular formula'
 
 def conv_negation(s) :
-  return set_list(['not', conv_formula(is_negation(s)[1])])  
+  return set_list(['not', conv_formula(s[1:])])  
 
 def conv_binary(s) :
-  t = is_binary(s)
-  return set_list([conv_connective(t[2]), conv_formula(t[1]), conv_formula(t[3])])  
+  n = mc_at(s)
+  return set_list([conv_connective(s[n]), conv_formula(s[1:n]), conv_formula(s[n+1:-1])])  
 
 def conv_quantified(s) :
-  t = is_quantified(s)
-  return set_list([conv_quantifer(t[0]), '((' + t[1] + ' U))', conv_formula(t[2])])  
+  return set_list([conv_quantifer(s[0]), '((' + s[1] + ' U))', conv_formula(s[2:])])  
 
 def conv_quantifer(s) :
   if s == '∀' :
@@ -176,17 +101,38 @@ def conv_connective(s) :
     return 'Error : not a binary connective' 
 
 def conv_id(s):
-  t = is_id(s)
-  return set_list(['=', conv_term(t[0]), conv_term(t[2])])  
+  n = s.find('=')
+  return set_list(['=', conv_term(s[0:n]), conv_term(s[n+1:])])  
 
-def conv_ap_mono_pred(s) :
-  p = is_ap_mono_pred(s)
-  return set_list([p[0], conv_term(p[1])])
+def conv_nid(s):
+  n = s.find('≠')
+  return set_list(['not', set_list(['=', conv_term(s[0:n]), conv_term(s[n+1:])])])
 
-def conv_ap_poly_pred(s) :
-  p = is_ap_poly_pred(s)
-  c = is_term_concat(p[2])
-  return set_list([p[0]] + [conv_term(x) for x in c])
+def conv_ap(s) :
+  l = parse_terms(s[2:-1])
+  return set_list([s[0]] + [conv_term(x) for x in l])
+
+def parse_terms(s) :
+  if s == '' :
+    return []
+  elif len(s) == 1 :
+    return [s]
+  if s[1] != '(' :
+    return [s[0]] + parse_terms(s[1:])
+  else :
+    return [s[:s.find(')')+1]] + parse_terms(s[s.find(')')+1:])
+
+def paren_args(s) :
+  if s[1] != '(' :
+    return s[0] + '(' + s[1:] + ')'
+  else :
+    return s
+
+def conv_term(s) :
+  if is_var(s) or is_func(s) :
+    return s
+  else :
+    return conv_ap(s)
 
 def set_list(l) :
   return parens(list_to_string(l)) 
@@ -200,16 +146,4 @@ def list_to_string(l):
   else:
     return ' ' + l[0] + list_to_string(l[1:])
 
-def conv_term(s) :
-  if is_var(s) or is_func(s) :
-    return s
-  if is_ap_func(s) :
-    return conv_ap_func(s)
-
-def conv_ap_func(s) :
-  p = is_ap_func(s)
-  c = is_term_concat(p[2])
-  return set_list([p[0]] + [conv_term(x) for x in c])
-
-print(conv_formula('(Hy ∧ ∃z (Gz ∧ S(xyz)))'))
-
+print(conv_formula('∀x (Gx → (∃y (Hy ∧ ∃z (Gz ∧ S(xyz))) → Fx))'))
